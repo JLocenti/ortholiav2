@@ -1,21 +1,23 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
-import { User, UserSettings, UserRole, USER_ROLES } from '../types/user';
+import { User as AppUser, UserSettings, UserRole, USER_ROLES } from '../types/user';
 import { useNavigate } from 'react-router-dom';
 import { initializeViewPreferences } from '../utils/initializeViewPreferences';
+import { auth } from '../config/firebase';
+import { updateProfile } from 'firebase/auth';
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  currentUser: User | null;
+  currentUser: AppUser | null;
   userSettings: UserSettings | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   register: (data: RegisterData) => Promise<void>;
   updateUserSettings: (settings: Partial<UserSettings>) => void;
-  updateUserProfile: (profile: Partial<User>) => void;
+  updateUserProfile: (profile: Partial<AppUser>) => Promise<void>;
   updateUserRole: (userId: string, role: UserRole) => Promise<void>;
   canManageRole: (role: UserRole) => boolean;
   recoverSuperAdmin: (email: string, recoveryCode: string) => Promise<void>;
-  getAllUsers: () => User[];
+  getAllUsers: () => AppUser[];
 }
 
 interface RegisterData {
@@ -32,7 +34,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const SUPER_ADMIN_RECOVERY_CODE = 'SA-RECOVERY-2024';
 
-const mockUsers: Record<string, User> = {
+const mockUsers: Record<string, AppUser> = {
   'jl@vincenti.fr': {
     id: 'super_admin',
     email: 'jl@vincenti.fr',
@@ -65,7 +67,7 @@ const mockUserSettings: Record<string, UserSettings> = {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const navigate = useNavigate();
 
@@ -99,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const userId = `user_${Date.now()}`;
-    const newUser: User = {
+    const newUser: AppUser = {
       id: userId,
       email: normalizedEmail,
       firstName: data.firstName,
@@ -178,12 +180,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateUserProfile = (profile: Partial<User>) => {
-    if (currentUser) {
-      const updatedUser = { ...currentUser, ...profile };
-      mockUsers[currentUser.email] = updatedUser;
-      setCurrentUser(updatedUser);
-      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+  const updateUserProfile = async (profile: Partial<AppUser>) => {
+    if (!auth.currentUser) return;
+
+    try {
+      if (profile.photo) {
+        await updateProfile(auth.currentUser, {
+          photoURL: profile.photo
+        });
+      }
+
+      if (profile.displayName) {
+        await updateProfile(auth.currentUser, {
+          displayName: profile.displayName
+        });
+      }
+
+      // Mise à jour du state local après la mise à jour Firebase
+      if (currentUser) {
+        const updatedUser = { ...currentUser, ...profile };
+        mockUsers[currentUser.email] = updatedUser;
+        setCurrentUser(updatedUser);
+        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+      }
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour du profil:', error);
+      throw error;
     }
   };
 

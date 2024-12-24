@@ -40,14 +40,14 @@ export default function Settings() {
     if (!file) return;
 
     try {
-      // Here you would typically:
-      // 1. Upload the file to your storage service
-      // 2. Get the URL of the uploaded file
-      // 3. Update the user's profile with the new photo URL
-      
-      // For now, we'll use a mock URL
-      const photoUrl = URL.createObjectURL(file);
-      await updateUserProfile({ photo: photoUrl });
+      // Convertir le fichier en Data URL
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        if (typeof reader.result === 'string') {
+          await updateUserProfile({ photo: reader.result });
+        }
+      };
+      reader.readAsDataURL(file);
     } catch (error) {
       setErrors(prev => ({ ...prev, photo: 'Erreur lors de la mise à jour de la photo' }));
     }
