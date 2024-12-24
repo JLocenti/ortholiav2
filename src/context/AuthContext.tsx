@@ -3,7 +3,7 @@ import { User as AppUser, UserSettings, UserRole, USER_ROLES } from '../types/us
 import { useNavigate } from 'react-router-dom';
 import { initializeViewPreferences } from '../utils/initializeViewPreferences';
 import { auth } from '../config/firebase';
-import { updateProfile } from 'firebase/auth';
+import { signInWithEmailAndPassword, updateProfile, User as FirebaseUser } from 'firebase/auth';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -93,6 +93,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  useEffect(() => {
+    // Écouter les changements d'état de l'authentification Firebase
+    const unsubscribe = auth.onAuthStateChanged((firebaseUser) => {
+      if (firebaseUser) {
+        // Récupérer les données mock existantes
+        const existingMockUser = Object.values(mockUsers).find(
+          user => user.email.toLowerCase() === firebaseUser.email?.toLowerCase()
+        );
+
+        if (existingMockUser) {
+          // Fusionner les données
+          const mergedUser: AppUser = {
+            ...existingMockUser,
+            id: firebaseUser.uid,
+            email: firebaseUser.email || existingMockUser.email,
+            photo: firebaseUser.photoURL || existingMockUser.photo,
+            displayName: firebaseUser.displayName || existingMockUser.displayName
+          };
+
+          setCurrentUser(mergedUser);
+          setIsAuthenticated(true);
+
+          // Mettre à jour le stockage local
+          mockUsers[mergedUser.email] = mergedUser;
+          localStorage.setItem('currentUser', JSON.stringify(mergedUser));
+
+          // Initialiser les préférences
+          const settings = mockUserSettings[mergedUser.id] || initializeViewPreferences();
+          setUserSettings(settings);
+          localStorage.setItem('userSettings', JSON.stringify(settings));
+        }
+      } else {
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        setUserSettings(null);
+        localStorage.removeItem('currentUser');
+        localStorage.removeItem('userSettings');
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const register = async (data: RegisterData) => {
     const normalizedEmail = data.email.toLowerCase();
     
@@ -139,26 +182,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    const normalizedEmail = email.toLowerCase();
-    const user = mockUsers[normalizedEmail];
-    const storedPassword = mockPasswords[normalizedEmail];
-
-    if (user && storedPassword === password) {
-      const settings = mockUserSettings[user.id];
-      setCurrentUser(user);
-      setUserSettings(settings);
-      setIsAuthenticated(true);
-      localStorage.setItem('currentUser', JSON.stringify(user));
-      localStorage.setItem('userSettings', JSON.stringify(settings));
+    try {
+      const normalizedEmail = email.toLowerCase();
       
-      try {
-        await initializeViewPreferences(user.id);
-      } catch (error) {
-        console.error('Erreur lors de l\'initialisation des préférences:', error);
-        // Continue même si l'initialisation échoue
+      // Connexion avec Firebase
+      const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+      const firebaseUser = userCredential.user;
+
+      // Récupérer les données mock existantes
+      const existingMockUser = mockUsers[normalizedEmail];
+      if (!existingMockUser) {
+        throw new Error('Utilisateur non trouvé');
       }
-    } else {
-      throw new Error('Invalid credentials');
+
+      // Fusionner les données Firebase avec les données mock
+      const mergedUser: AppUser = {
+        ...existingMockUser,
+        id: firebaseUser.uid,
+        email: normalizedEmail,
+        photo: firebaseUser.photoURL || existingMockUser.photo,
+        displayName: firebaseUser.displayName || existingMockUser.displayName
+      };
+
+      // Mettre à jour le profil Firebase si nécessaire
+      if (existingMockUser.photo && !firebaseUser.photoURL) {
+        await updateProfile(firebaseUser, {
+          photoURL: existingMockUser.photo
+        });
+      }
+
+      if (existingMockUser.displayName && !firebaseUser.displayName) {
+        await updateProfile(firebaseUser, {
+          displayName: existingMockUser.displayName
+        });
+      }
+
+      // Mettre à jour le state et le stockage local
+      mockUsers[normalizedEmail] = mergedUser;
+      setCurrentUser(mergedUser);
+      setIsAuthenticated(true);
+      localStorage.setItem('currentUser', JSON.stringify(mergedUser));
+
+      // Initialiser les préférences utilisateur
+      const settings = mockUserSettings[mergedUser.id] || initializeViewPreferences();
+      setUserSettings(settings);
+      localStorage.setItem('userSettings', JSON.stringify(settings));
+
+      navigate('/');
+    } catch (error) {
+      console.error('Erreur de connexion:', error);
+      throw error;
     }
   };
 
