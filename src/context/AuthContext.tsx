@@ -3,7 +3,12 @@ import { User as AppUser, UserSettings, UserRole, USER_ROLES } from '../types/us
 import { useNavigate } from 'react-router-dom';
 import { initializeViewPreferences } from '../utils/initializeViewPreferences';
 import { auth } from '../config/firebase';
-import { signInWithEmailAndPassword, updateProfile, User as FirebaseUser } from 'firebase/auth';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  updateProfile, 
+  User as FirebaseUser 
+} from 'firebase/auth';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -184,55 +189,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     try {
       const normalizedEmail = email.toLowerCase();
+      const mockUser = mockUsers[normalizedEmail];
       
-      // Connexion avec Firebase
-      const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
-      const firebaseUser = userCredential.user;
-
-      // Récupérer les données mock existantes
-      const existingMockUser = mockUsers[normalizedEmail];
-      if (!existingMockUser) {
+      if (!mockUser) {
         throw new Error('Utilisateur non trouvé');
       }
 
-      // Fusionner les données Firebase avec les données mock
-      const mergedUser: AppUser = {
-        ...existingMockUser,
-        id: firebaseUser.uid,
-        email: normalizedEmail,
-        photo: firebaseUser.photoURL || existingMockUser.photo,
-        displayName: firebaseUser.displayName || existingMockUser.displayName
-      };
-
-      // Mettre à jour le profil Firebase si nécessaire
-      if (existingMockUser.photo && !firebaseUser.photoURL) {
-        await updateProfile(firebaseUser, {
-          photoURL: existingMockUser.photo
-        });
+      try {
+        // Essayer de se connecter d'abord
+        const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+        const firebaseUser = userCredential.user;
+        await handleUserAuthentication(firebaseUser, mockUser);
+      } catch (error: any) {
+        // Si l'erreur est "user-not-found", créer le compte
+        if (error.code === 'auth/user-not-found') {
+          const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+          const firebaseUser = userCredential.user;
+          await handleUserAuthentication(firebaseUser, mockUser);
+        } else {
+          throw error;
+        }
       }
-
-      if (existingMockUser.displayName && !firebaseUser.displayName) {
-        await updateProfile(firebaseUser, {
-          displayName: existingMockUser.displayName
-        });
-      }
-
-      // Mettre à jour le state et le stockage local
-      mockUsers[normalizedEmail] = mergedUser;
-      setCurrentUser(mergedUser);
-      setIsAuthenticated(true);
-      localStorage.setItem('currentUser', JSON.stringify(mergedUser));
-
-      // Initialiser les préférences utilisateur
-      const settings = mockUserSettings[mergedUser.id] || initializeViewPreferences();
-      setUserSettings(settings);
-      localStorage.setItem('userSettings', JSON.stringify(settings));
 
       navigate('/');
     } catch (error) {
       console.error('Erreur de connexion:', error);
       throw error;
     }
+  };
+
+  const handleUserAuthentication = async (firebaseUser: FirebaseUser, mockUser: AppUser) => {
+    // Fusionner les données Firebase avec les données mock
+    const mergedUser: AppUser = {
+      ...mockUser,
+      id: firebaseUser.uid,
+      email: firebaseUser.email || mockUser.email,
+      photo: firebaseUser.photoURL || mockUser.photo,
+      displayName: firebaseUser.displayName || mockUser.displayName
+    };
+
+    // Mettre à jour le profil Firebase si nécessaire
+    if (mockUser.photo && !firebaseUser.photoURL) {
+      await updateProfile(firebaseUser, {
+        photoURL: mockUser.photo
+      });
+    }
+
+    if (mockUser.displayName && !firebaseUser.displayName) {
+      await updateProfile(firebaseUser, {
+        displayName: mockUser.displayName
+      });
+    }
+
+    // Mettre à jour le state et le stockage local
+    mockUsers[mergedUser.email] = mergedUser;
+    setCurrentUser(mergedUser);
+    setIsAuthenticated(true);
+    localStorage.setItem('currentUser', JSON.stringify(mergedUser));
+
+    // Initialiser les préférences utilisateur
+    const settings = mockUserSettings[mergedUser.id] || initializeViewPreferences();
+    setUserSettings(settings);
+    localStorage.setItem('userSettings', JSON.stringify(settings));
   };
 
   const logout = () => {
