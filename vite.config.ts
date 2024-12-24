@@ -5,7 +5,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react({
-      jsxRuntime: 'classic' // Utiliser le runtime classique de React
+      jsxRuntime: 'classic'
     })],
     server: {
       port: 6174
@@ -13,7 +13,8 @@ export default defineConfig(({ mode }) => {
     resolve: {
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
       alias: {
-        'use-sync-external-store/shim': 'use-sync-external-store/shim/index.js'
+        'use-sync-external-store/shim': 'use-sync-external-store/shim/index.js',
+        'scheduler': 'scheduler/index.js'
       }
     },
     build: {
@@ -23,6 +24,7 @@ export default defineConfig(({ mode }) => {
             if (id.includes('node_modules')) {
               if (id.includes('react') || 
                   id.includes('react-dom') || 
+                  id.includes('scheduler') ||
                   id.includes('react-router') || 
                   id.includes('@hello-pangea/dnd') ||
                   id.includes('@headlessui/react') ||
@@ -48,12 +50,14 @@ export default defineConfig(({ mode }) => {
       include: [
         'react',
         'react-dom',
+        'react/jsx-runtime',
         'react-router-dom',
         '@hello-pangea/dnd',
         '@headlessui/react',
         '@radix-ui/react-dropdown-menu',
         'use-sync-external-store',
         'use-sync-external-store/shim',
+        'scheduler',
         'regenerator-runtime/runtime'
       ],
       esbuildOptions: {
