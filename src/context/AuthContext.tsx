@@ -6,8 +6,10 @@ import { auth } from '../config/firebase';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
-  updateProfile, 
-  User as FirebaseUser 
+  updateProfile,
+  sendPasswordResetEmail,
+  User as FirebaseUser,
+  AuthError
 } from 'firebase/auth';
 
 interface AuthContextType {
@@ -23,6 +25,7 @@ interface AuthContextType {
   canManageRole: (role: UserRole) => boolean;
   recoverSuperAdmin: (email: string, recoveryCode: string) => Promise<void>;
   getAllUsers: () => AppUser[];
+  resetPassword: (email: string) => Promise<void>;
 }
 
 interface RegisterData {
@@ -189,31 +192,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     try {
       const normalizedEmail = email.toLowerCase();
-      const mockUser = mockUsers[normalizedEmail];
+      console.log('Tentative de connexion pour:', normalizedEmail);
       
-      if (!mockUser) {
-        throw new Error('Utilisateur non trouvé');
+      const mockUser = mockUsers[normalizedEmail];
+      const storedPassword = mockPasswords[normalizedEmail];
+      
+      if (!mockUser || password !== storedPassword) {
+        console.error('Identifiants invalides dans le système mock');
+        throw new Error('Email ou mot de passe incorrect');
       }
 
+      console.log('Utilisateur trouvé dans le système mock');
+
       try {
+        console.log('Tentative de connexion Firebase');
         // Essayer de se connecter d'abord
         const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+        console.log('Connexion Firebase réussie');
         const firebaseUser = userCredential.user;
         await handleUserAuthentication(firebaseUser, mockUser);
       } catch (error: any) {
+        console.log('Erreur Firebase:', error.code);
         // Si l'erreur est "user-not-found", créer le compte
         if (error.code === 'auth/user-not-found') {
-          const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
-          const firebaseUser = userCredential.user;
-          await handleUserAuthentication(firebaseUser, mockUser);
+          console.log('Création d\'un nouveau compte Firebase');
+          try {
+            const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+            console.log('Compte Firebase créé avec succès');
+            const firebaseUser = userCredential.user;
+            await handleUserAuthentication(firebaseUser, mockUser);
+          } catch (createError: any) {
+            console.error('Erreur lors de la création du compte:', createError);
+            throw new Error('Erreur lors de la création du compte: ' + createError.message);
+          }
+        } else if (error.code === 'auth/wrong-password') {
+          console.error('Mot de passe incorrect dans Firebase');
+          throw new Error('Email ou mot de passe incorrect');
         } else {
+          console.error('Autre erreur Firebase:', error);
           throw error;
         }
       }
 
       navigate('/');
     } catch (error) {
-      console.error('Erreur de connexion:', error);
+      console.error('Erreur finale:', error);
       throw error;
     }
   };
@@ -372,6 +395,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const resetPassword = async (email: string) => {
+    try {
+      const normalizedEmail = email.toLowerCase();
+      
+      // Vérifier si l'utilisateur existe dans notre système mock
+      const mockUser = mockUsers[normalizedEmail];
+      if (!mockUser) {
+        throw new Error('Aucun compte trouvé avec cet email');
+      }
+
+      // Envoyer l'email de réinitialisation via Firebase
+      await sendPasswordResetEmail(auth, normalizedEmail);
+      
+      // Retourner une promesse résolue pour indiquer le succès
+      return Promise.resolve();
+    } catch (error: any) {
+      console.error('Erreur lors de la réinitialisation du mot de passe:', error);
+      throw new Error(error.message || 'Erreur lors de la réinitialisation du mot de passe');
+    }
+  };
+
   return (
     <AuthContext.Provider value={{
       isAuthenticated,
@@ -385,7 +429,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateUserRole,
       canManageRole,
       recoverSuperAdmin,
-      getAllUsers
+      getAllUsers,
+      resetPassword
     }}>
       {children}
     </AuthContext.Provider>
