@@ -192,6 +192,13 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
+    if (isOpen) {
+      // Utiliser tous les champs sans filtrage
+      setFields(initialFields);
+    }
+  }, [isOpen, initialFields]);
+
+  useEffect(() => {
     const initialData = {
       fileNumber: patient.fileNumber || '',
       practitioner: patient.practitioner || (allowMultiplePractitioners ? [] : ''),
@@ -233,48 +240,6 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
   }, [debouncedPrescriptions]);
 
   useEffect(() => {
-    if (isOpen) {
-      // Utiliser tous les champs sans filtrage
-      setFields(initialFields);
-
-      // Gérer l'onglet actif
-      if (focusedField === "prescription") {
-        const prescriptionCategory = categories.find(cat => 
-          cat.name.toLowerCase() === 'prescription'
-        );
-        if (prescriptionCategory) {
-          setActiveTab(prescriptionCategory.id);
-        }
-      } else if (focusedField === "treatment") {
-        const treatmentCategory = categories.find(cat => 
-          cat.name.toLowerCase() === 'traitement'
-        );
-        if (treatmentCategory) {
-          setActiveTab(treatmentCategory.id);
-        }
-      } else if (focusedField) {
-        // Chercher la catégorie correspondant au champ cliqué
-        const field = initialFields.find(f => f.id === focusedField);
-        if (field && field.category) {
-          setActiveTab(field.category);
-          // Attendre que le DOM soit mis à jour
-          setTimeout(() => {
-            const element = document.getElementById(`field-${focusedField}`);
-            if (element) {
-              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }, 100);
-        }
-      } else if (categories.length > 0) {
-        // Pour les autres cas, ouvrir sur la première catégorie
-        setActiveTab(categories[0].id);
-      }
-
-      setHasChanges(false);
-    }
-  }, [isOpen, patient, focusedField, categories]);
-
-  useEffect(() => {
     const hasFormChanges = JSON.stringify(localFormData) !== JSON.stringify({
       fileNumber: patient.fileNumber || '',
       practitioner: patient.practitioner || (allowMultiplePractitioners ? [] : ''),
@@ -284,47 +249,23 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
     const hasPrescriptionChanges = JSON.stringify(prescriptions) !== JSON.stringify(patient.prescriptions || {});
 
     setHasChanges(hasFormChanges || hasPrescriptionChanges);
-  }, [localFormData, prescriptions, patient]);
+  }, [localFormData, prescriptions, patient, allowMultiplePractitioners]);
 
-  const handleFieldChange = (fieldId: string, value: any) => {
-    const newFormData = {
-      ...localFormData,
-      [fieldId]: value
-    };
-
-    // Mettre à jour immédiatement l'affichage
-    setLocalFormData(newFormData);
-    
-    // Debounce la sauvegarde
-    setDebouncedFormData(newFormData);
-  };
-
-  const saveChanges = async (newFormData: any) => {
-    if (!isOpen) return;
-    
+  const saveChanges = async (formData: any) => {
+    if (isSaving) return;
     setIsSaving(true);
-    const updatedPatient: Partial<Patient> = {
-      ...patient,
-      fileNumber: newFormData.fileNumber,
-      practitioner: newFormData.practitioner,
-      fields: {
-        ...patient.fields,
-        ...newFormData
-      },
-      prescriptions
-    };
-
-    // Supprimer les champs de base des fields pour éviter la duplication
-    delete updatedPatient.fields.fileNumber;
-    delete updatedPatient.fields.practitioner;
 
     try {
+      const updatedPatient: Partial<Patient> = {
+        fileNumber: formData.fileNumber,
+        practitioner: formData.practitioner,
+        fields: { ...formData },
+        updatedAt: new Date().toISOString()
+      };
+
       await onSave(updatedPatient);
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
-      // En cas d'erreur, revenir aux données précédentes
-      setLocalFormData(patient);
-      setDebouncedFormData(patient);
+      console.error('Error saving changes:', error);
     } finally {
       setIsSaving(false);
     }
@@ -356,6 +297,19 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
       setDebouncedFormData(newFormData);
       return newFormData;
     });
+  };
+
+  const handleFieldChange = (fieldId: string, value: any) => {
+    const newFormData = {
+      ...localFormData,
+      [fieldId]: value
+    };
+
+    // Mettre à jour immédiatement l'affichage
+    setLocalFormData(newFormData);
+    
+    // Debounce la sauvegarde
+    setDebouncedFormData(newFormData);
   };
 
   const renderField = (field: Question) => {
@@ -1018,6 +972,57 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (isOpen && !activeTab && categories.length > 0) {
+      // Définir l'onglet actif seulement s'il n'y en a pas déjà un
+      if (focusedField === "prescription") {
+        const prescriptionCategory = categories.find(cat => 
+          cat.name.toLowerCase() === 'prescription'
+        );
+        if (prescriptionCategory) {
+          setActiveTab(prescriptionCategory.id);
+        }
+      } else if (focusedField === "treatment") {
+        const treatmentCategory = categories.find(cat => 
+          cat.name.toLowerCase() === 'traitement'
+        );
+        if (treatmentCategory) {
+          setActiveTab(treatmentCategory.id);
+        }
+      } else if (focusedField) {
+        const field = initialFields.find(f => f.id === focusedField);
+        if (field && field.category) {
+          setActiveTab(field.category);
+          // Attendre que le DOM soit mis à jour
+          setTimeout(() => {
+            const element = document.getElementById(`field-${focusedField}`);
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 100);
+        }
+      } else {
+        setActiveTab(categories[0].id);
+      }
+    }
+  }, [isOpen, categories, focusedField, initialFields]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setLocalFormData(null);
+      setDebouncedFormData(null);
+      setHasChanges(false);
+    } else {
+      const initialData = {
+        fileNumber: patient.fileNumber || '',
+        practitioner: patient.practitioner || (allowMultiplePractitioners ? [] : ''),
+        ...patient.fields
+      };
+      setLocalFormData(initialData);
+      setDebouncedFormData(initialData);
+    }
+  }, [isOpen, patient, allowMultiplePractitioners]);
+
   return (
     <Modal
       isOpen={isOpen}
@@ -1102,7 +1107,9 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    const treatmentCategory = categories.find(cat => cat.name.toLowerCase() === 'traitement');
+                    const treatmentCategory = categories.find(cat => 
+                      cat.name.toLowerCase() === 'traitement'
+                    );
                     if (treatmentCategory) {
                       setActiveTab(treatmentCategory.id);
                     }
