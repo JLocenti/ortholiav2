@@ -39,11 +39,19 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#4361ee] to-[#7209b7] flex items-center justify-center p-4">
-      <div className="bg-white rounded-[20px] shadow-2xl w-full max-w-md p-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex flex-col items-center justify-center p-4">
+      {/* Logo et Titre */}
+      <div className="text-center text-white mb-8">
+        <h1 className="text-4xl font-bold mb-4">Ortholia</h1>
+        <h2 className="text-2xl font-semibold mb-2">Une Solution Innovante pour les Orthodontistes</h2>
+        <p className="text-lg opacity-90">Gérez vos 1ères consultations et bilans de manière professionnelle grâce à un outil intelligent qui collecte et organise facilement les données patients.</p>
+      </div>
+
+      {/* Carte de connexion */}
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
         <div className="text-center mb-8">
-          <h2 className="text-[28px] font-bold text-gray-900 mb-2">Bienvenue sur Ortholia</h2>
-          <p className="text-gray-600">Connectez-vous à votre compte</p>
+          <h3 className="text-2xl font-bold text-gray-900 mb-2">Se connecter</h3>
+          <p className="text-gray-600">Accédez à votre espace Ortholia</p>
         </div>
 
         {error && (
@@ -60,31 +68,22 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-[15px] text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Adresse e-mail
             </label>
-            <div className="relative">
-              <input
-                ref={emailInputRef}
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="block w-full px-4 py-3 border border-gray-300 rounded-[10px] focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-[15px]"
-                placeholder="vous@exemple.com"
-              />
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                <span className="text-gray-400">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </span>
-              </div>
-            </div>
+            <input
+              ref={emailInputRef}
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm transition-all duration-200"
+              placeholder="vous@exemple.com"
+            />
           </div>
 
           <div>
-            <label className="block text-[15px] text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Mot de passe
             </label>
             <input
@@ -92,7 +91,7 @@ export default function Login() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="block w-full px-4 py-3 border border-gray-300 rounded-[10px] focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-[15px]"
+              className="block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 text-sm transition-all duration-200"
               placeholder="••••••••"
             />
           </div>
@@ -101,7 +100,7 @@ export default function Login() {
             <button
               type="button"
               onClick={handleForgotPassword}
-              className="text-[15px] text-blue-600 hover:text-blue-500"
+              className="text-sm text-blue-600 hover:text-blue-800 transition-colors duration-200"
             >
               Mot de passe oublié ?
             </button>
@@ -109,7 +108,7 @@ export default function Login() {
 
           <button
             type="submit"
-            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-[10px] shadow-sm text-[15px] font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 mt-6"
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-4 rounded-lg hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 font-medium"
           >
             Se connecter
           </button>
