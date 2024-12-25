@@ -4,7 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { ViewProvider } from './context/ViewContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { PatientProvider } from './context/PatientContext';
-import { FirestoreProvider } from './context/FirestoreProvider';
+import { FirestoreProvider } from './context/FirestoreContext';
 import { PractitionerProvider } from './context/PractitionerContext';
 import { useAuth } from './context/AuthContext';
 import OfflineIndicator from './components/OfflineIndicator';
