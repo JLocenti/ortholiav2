@@ -1,0 +1,257 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Plus } from 'lucide-react';
+import PatientTable from '../components/PatientTable';
+import { useViews } from '../context/ViewContext';
+import { usePatients } from '../context/PatientContext';
+import Modal from '../components/Modal';
+import ViewEditor from '../components/ViewEditor';
+import { Patient } from '../types/view';
+import CreatePatientModal from '../components/modals/CreatePatientModal';
+import DynamicPatientForm from '../components/DynamicPatientForm';
+
+export default function AdminView() {
+  const { viewId = 'home' } = useParams();
+  const navigate = useNavigate();
+  const { viewPreferences, isLoading } = useViews();
+  const { patients: initialPatients, addPatient, loading } = usePatients();
+  const currentView = viewPreferences?.find(v => v.id === viewId);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [activeColumns, setActiveColumns] = useState<string[]>([]);
+  const [showLastModified, setShowLastModified] = useState(
+    currentView?.settings?.showLastModified ?? true
+  );
+  const [showColumnVisibilityModal, setShowColumnVisibilityModal] = useState(false);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
+  const [showViewEditor, setShowViewEditor] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && viewPreferences.length > 0) {
+      // Si nous sommes sur la vue 'home' et qu'il y a des vues disponibles,
+      // rediriger vers la première vue
+      if (viewId === 'home') {
+        navigate(`/app/${viewPreferences[0].id}`, { replace: true });
+      }
+    }
+  }, [viewId, viewPreferences, isLoading, navigate]);
+
+  useEffect(() => {
+    if (currentView) {
+      setShowLastModified(currentView.settings?.showLastModified ?? true);
+    }
+  }, [currentView]);
+
+  useEffect(() => {
+    if (initialPatients) {
+      setPatients(initialPatients);
+    }
+  }, [initialPatients]);
+
+  useEffect(() => {
+    if (currentView?.columns) {
+      console.log('Initializing columnVisibility from currentView');
+      // Initialiser la visibilité des colonnes
+      const visibilityMap = {
+        // Colonnes fixes
+        practitioner: true, // Par défaut visible
+        lastModified: true, // Par défaut visible
+        // Colonnes personnalisées
+        ...currentView.columns.reduce((acc, col) => ({
+          ...acc,
+          [col.fieldId]: col.visible
+        }), {})
+      };
+      console.log('New visibility map:', visibilityMap);
+      setColumnVisibility(visibilityMap);
+      
+      // Mettre à jour activeColumns en fonction des colonnes visibles
+      const visibleColumns = currentView.columns
+        .filter(col => col.visible)
+        .map(col => col.fieldId);
+      setActiveColumns(visibleColumns);
+    }
+  }, [currentView]);
+
+  const handleCreatePatient = async (data: any) => {
+    try {
+      await addPatient(data);
+      setShowCreateModal(false);
+    } catch (error) {
+      console.error('Error creating patient:', error);
+    }
+  };
+
+  const handleToggleColumnVisibility = async (columnId: string) => {
+    try {
+      if (!currentView) return;
+
+      const isCurrentlyVisible = columnVisibility[columnId];
+      const newVisibility = !isCurrentlyVisible;
+      console.log(`Toggling column ${columnId}: ${isCurrentlyVisible} -> ${newVisibility}`);
+      
+      // 1. Mettre à jour l'état local immédiatement
+      setColumnVisibility(prev => ({
+        ...prev,
+        [columnId]: newVisibility
+      }));
+
+      // 2. Mettre à jour les colonnes actives
+      if (columnId === 'practitioner') {
+        // Pour la colonne praticien, on la traite différemment car elle n'est pas dans currentView.columns
+        if (newVisibility) {
+          setActiveColumns(prev => [...prev, columnId]);
+        } else {
+          setActiveColumns(prev => prev.filter(id => id !== columnId));
+        }
+      } else {
+        // Pour les autres colonnes, on met à jour normalement
+        if (newVisibility) {
+          setActiveColumns(prev => [...prev, columnId]);
+        } else {
+          setActiveColumns(prev => prev.filter(id => id !== columnId));
+        }
+
+        // 3. Préparer la mise à jour pour Firestore (seulement pour les colonnes personnalisées)
+        const updatedColumns = currentView.columns.map(col => {
+          if (col.fieldId === columnId) {
+            return { ...col, visible: newVisibility };
+          }
+          return col;
+        });
+
+        // 4. Mettre à jour dans Firestore
+        await viewPreferencesService.updateViewPreference(currentView.id, {
+          columns: updatedColumns
+        });
+      }
+    } catch (error) {
+      console.error('Error updating column visibility:', error);
+      // Restaurer l'état précédent en cas d'erreur
+      setColumnVisibility(prev => ({
+        ...prev,
+        [columnId]: !prev[columnId]
+      }));
+      if (columnId === 'practitioner') {
+        if (isCurrentlyVisible) {
+          setActiveColumns(prev => prev.filter(id => id !== columnId));
+        } else {
+          setActiveColumns(prev => [...prev, columnId]);
+        }
+      }
+    }
+  };
+
+  const handleAddNewField = async (fieldId: string) => {
+    try {
+      if (!currentView) return;
+
+      // Ajouter le nouveau champ à la configuration des colonnes
+      const newColumn = {
+        fieldId,
+        visible: true, // Par défaut, le nouveau champ est visible
+        order: currentView.columns.length // Le mettre à la fin
+      };
+
+      // Mettre à jour l'état local
+      setColumnVisibility(prev => ({
+        ...prev,
+        [fieldId]: true
+      }));
+
+      setActiveColumns(prev => [...prev, fieldId]);
+
+      // Mettre à jour la configuration dans Firestore
+      const updatedColumns = [...currentView.columns, newColumn];
+      await viewPreferencesService.updateViewPreference(currentView.id, {
+        columns: updatedColumns
+      });
+
+    } catch (error) {
+      console.error('Error adding new field to columns:', error);
+      // Restaurer l'état précédent en cas d'erreur
+      setColumnVisibility(prev => {
+        const { [fieldId]: _, ...rest } = prev;
+        return rest;
+      });
+      setActiveColumns(prev => prev.filter(id => id !== fieldId));
+    }
+  };
+
+  if (isLoading || loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-[var(--theme-color)]"></div>
+      </div>
+    );
+  }
+
+  if (!currentView) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+            Vue non trouvée
+          </h2>
+          <p className="text-gray-600 dark:text-gray-400">
+            La vue que vous recherchez n'existe pas.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <PatientTable
+        patients={patients}
+        onPatientClick={setSelectedPatient}
+        activeColumns={activeColumns}
+        showLastModified={showLastModified}
+        onToggleColumnVisibility={handleToggleColumnVisibility}
+        showColumnVisibilityModal={showColumnVisibilityModal}
+        onCloseColumnVisibilityModal={() => setShowColumnVisibilityModal(false)}
+        columnVisibility={columnVisibility}
+      />
+
+      {selectedPatient && (
+        <Modal
+          isOpen={!!selectedPatient}
+          onClose={() => setSelectedPatient(null)}
+          title="Détails du patient"
+        >
+          <DynamicPatientForm
+            patient={selectedPatient}
+            onClose={() => setSelectedPatient(null)}
+          />
+        </Modal>
+      )}
+
+      {showCreateModal && (
+        <CreatePatientModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          visibleFields={currentView?.columns.filter(col => col.visible).map(col => col.fieldId) || []}
+          viewId={viewId}
+          onSubmit={handleCreatePatient}
+        />
+      )}
+
+      {showViewEditor && (
+        <Modal
+          isOpen={showViewEditor}
+          onClose={() => setShowViewEditor(false)}
+          title="Éditer la vue"
+        >
+          <ViewEditor
+            view={currentView}
+            onClose={() => setShowViewEditor(false)}
+            onFieldsUpdate={handleFieldsUpdate}
+            onNewField={handleAddNewField}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
