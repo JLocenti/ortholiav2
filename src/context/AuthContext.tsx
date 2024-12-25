@@ -194,47 +194,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const normalizedEmail = email.toLowerCase();
       console.log('Tentative de connexion pour:', normalizedEmail);
       
-      const mockUser = mockUsers[normalizedEmail];
-      const storedPassword = mockPasswords[normalizedEmail];
-      
-      if (!mockUser || password !== storedPassword) {
-        console.error('Identifiants invalides dans le système mock');
-        throw new Error('Email ou mot de passe incorrect');
-      }
-
-      console.log('Utilisateur trouvé dans le système mock');
-
       try {
         console.log('Tentative de connexion Firebase');
-        // Essayer de se connecter d'abord
         const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
         console.log('Connexion Firebase réussie');
+        
         const firebaseUser = userCredential.user;
+        // Récupérer ou créer les données mock
+        let mockUser = mockUsers[normalizedEmail];
+        if (!mockUser) {
+          // Créer un nouveau mock user si nécessaire
+          mockUser = {
+            id: firebaseUser.uid,
+            email: normalizedEmail,
+            firstName: '',
+            lastName: '',
+            phone: '',
+            address: '',
+            company: '',
+            photo: firebaseUser.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a',
+            defaultViewId: 'global',
+            customViews: [],
+            createdAt: new Date().toISOString(),
+            role: USER_ROLES.MEMBER,
+            status: 'active'
+          };
+          mockUsers[normalizedEmail] = mockUser;
+        }
+        
         await handleUserAuthentication(firebaseUser, mockUser);
+        navigate('/');
       } catch (error: any) {
-        console.log('Erreur Firebase:', error.code);
-        // Si l'erreur est "user-not-found", créer le compte
-        if (error.code === 'auth/user-not-found') {
-          console.log('Création d\'un nouveau compte Firebase');
-          try {
-            const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
-            console.log('Compte Firebase créé avec succès');
-            const firebaseUser = userCredential.user;
-            await handleUserAuthentication(firebaseUser, mockUser);
-          } catch (createError: any) {
-            console.error('Erreur lors de la création du compte:', createError);
-            throw new Error('Erreur lors de la création du compte: ' + createError.message);
-          }
-        } else if (error.code === 'auth/wrong-password') {
-          console.error('Mot de passe incorrect dans Firebase');
+        console.error('Erreur Firebase:', error);
+        if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
           throw new Error('Email ou mot de passe incorrect');
+        } else if (error.code === 'auth/too-many-requests') {
+          throw new Error('Trop de tentatives de connexion. Veuillez réessayer plus tard.');
         } else {
-          console.error('Autre erreur Firebase:', error);
-          throw error;
+          throw new Error('Une erreur est survenue lors de la connexion');
         }
       }
-
-      navigate('/');
     } catch (error) {
       console.error('Erreur finale:', error);
       throw error;
