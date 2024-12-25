@@ -191,14 +191,10 @@ export function ViewProvider({ children }: { children: React.ReactNode }) {
   const deleteView = async (viewId: string) => {
     try {
       // Supprimer la vue de Firestore
-      await deleteDoc(doc(db, 'views', viewId));
+      await deleteDoc(doc(db, 'viewPreferences', viewId));
       
       // Mettre à jour l'état local
-      setViewPreferences(prev => {
-        const newPreferences = { ...prev };
-        delete newPreferences[viewId];
-        return newPreferences;
-      });
+      setViewPreferences(prev => prev.filter(view => view.id !== viewId));
     } catch (error) {
       console.error('Error deleting view:', error);
       throw error;

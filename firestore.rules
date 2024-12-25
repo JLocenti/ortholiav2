@@ -50,7 +50,14 @@ service cloud.firestore {
     match /practitioners/{practitionerId} {
       allow read, write: if isAuthenticated();
     }
-    
+
+    // Collection views - Vues personnalisées
+    match /views/{viewId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
     // Collection fields - Champs personnalisés
     match /fields/{fieldId} {
       allow read, write: if isAuthenticated();
