@@ -4,7 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { ViewProvider } from './context/ViewContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { PatientProvider } from './context/PatientContext';
-import { FirestoreProvider } from './context/FirestoreContext';
+import { FirestoreProvider } from './context/FirestoreProvider';
 import { PractitionerProvider } from './context/PractitionerContext';
 import { useAuth } from './context/AuthContext';
 import OfflineIndicator from './components/OfflineIndicator';
@@ -17,7 +17,7 @@ import AccountsView from './pages/AccountsView';
 import LandingPage from './pages/LandingPage';
 import AISettings from './pages/AISettings';
 import Edit from './pages/Edit';
-import { categoryService } from './services/categoryService'; // Import correct du service
+import { categoryService } from './services/categoryService';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -30,9 +30,7 @@ function ProtectedRoute({ children }: ProtectedRouteProps) {
 
 export default function App() {
   useEffect(() => {
-    // Initialiser les icônes des catégories
     categoryService.initializeCategoryIcons().catch(console.error);
-    // Initialiser l'ordre des champs dans les catégories
     categoryService.initializeFieldsOrder().catch(console.error);
   }, []);
 
@@ -50,12 +48,13 @@ export default function App() {
                       <Route path="/login" element={<Login />} />
                       <Route path="/register" element={<Register />} />
                       <Route
-                        path="/app/*"
+                        path="/app"
                         element={
                           <ProtectedRoute>
                             <Layout>
                               <Routes>
                                 <Route index element={<Navigate to="home" replace />} />
+                                <Route path="home" element={<AdminView />} />
                                 <Route path=":viewId" element={<AdminView />} />
                                 <Route path="settings" element={<Settings />} />
                                 <Route path="accounts" element={<AccountsView />} />
@@ -66,6 +65,7 @@ export default function App() {
                           </ProtectedRoute>
                         }
                       />
+                      <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                     <OfflineIndicator />
                   </div>
