@@ -200,10 +200,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('Connexion Firebase réussie');
         
         const firebaseUser = userCredential.user;
-        // Récupérer ou créer les données mock
         let mockUser = mockUsers[normalizedEmail];
         if (!mockUser) {
-          // Créer un nouveau mock user si nécessaire
           mockUser = {
             id: firebaseUser.uid,
             email: normalizedEmail,
@@ -223,7 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         
         await handleUserAuthentication(firebaseUser, mockUser);
-        navigate('/');
+        navigate('/app/home');
       } catch (error: any) {
         console.error('Erreur Firebase:', error);
         if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
