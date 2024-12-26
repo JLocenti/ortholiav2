@@ -110,16 +110,11 @@ export default function Login() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-end">
             <div className="text-sm">
               <a href="#" className="font-medium text-ortholia-blue hover:text-ortholia-purple">
                 Mot de passe oublié ?
               </a>
-            </div>
-            <div className="text-sm">
-              <Link to="/register" className="font-medium text-ortholia-blue hover:text-ortholia-purple">
-                Créer un compte
-              </Link>
             </div>
           </div>
 
