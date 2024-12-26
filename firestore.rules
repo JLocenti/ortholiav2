@@ -7,66 +7,37 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Fonction pour vérifier si l'utilisateur est le propriétaire
+    // Fonction pour vérifier si l'utilisateur accède à ses propres données
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Collection users - Accès aux données utilisateur
-    match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.auth.uid == userId;
-      allow update, delete: if isOwner(userId);
-
-      // Sous-collection settings pour les préférences utilisateur
-      match /settings/{setting} {
-        allow read, write: if isOwner(userId);
-      }
-    }
-
-    // Collection userSettings - Paramètres utilisateur
+    // Paramètres utilisateur
     match /userSettings/{userId} {
       allow read, write: if isOwner(userId);
     }
 
-    // Collection viewPreferences - Préférences d'affichage
-    match /viewPreferences/{preferenceId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-    }
-
-    // Collection themeSettings - Paramètres du thème
-    match /themeSettings/{userId} {
-      allow read, write: if isOwner(userId);
-    }
-
-    // Collection patients - Données des patients
-    match /patients/{patientId} {
-      allow read, write: if isAuthenticated();
-    }
-    
-    // Collection practitioners - Données des praticiens
-    match /practitioners/{practitionerId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // Collection views - Vues personnalisées
-    match /views/{viewId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAuthenticated();
-    }
-
-    // Collection fields - Champs personnalisés
-    match /fields/{fieldId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // Collection categories - Catégories
+    // Catégories
     match /categories/{categoryId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
+    }
+
+    // Praticiens
+    match /practitioners/{practitionerId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Patients
+    match /patients/{patientId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Règle par défaut : refuser tout accès non explicitement autorisé
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

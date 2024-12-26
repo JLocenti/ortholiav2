@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 
 export default function Register() {
   const navigate = useNavigate();
-  const { createUser } = useAuth();
+  const { createUser, login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
@@ -51,15 +51,30 @@ export default function Register() {
     }
 
     try {
-      await createUser(formData.email, formData.password);
-    } catch (err) {
+      // Créer l'utilisateur avec toutes les données du profil
+      await createUser({
+        email: formData.email,
+        password: formData.password,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        company: formData.company,
+        phone: formData.phone,
+        address: formData.address
+      });
+      
+      // La navigation sera gérée par la fonction createUser
+    } catch (err: any) {
       console.error('Erreur d\'inscription:', err);
-      if (err instanceof Error) {
-        if (err.message.includes('email-already-in-use')) {
-          setError('Cette adresse email est déjà utilisée');
-        } else {
-          setError(err.message);
-        }
+      if (err.code === 'auth/email-already-in-use') {
+        setError('Cette adresse email est déjà utilisée');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Adresse email invalide');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('L\'inscription par email/mot de passe n\'est pas activée');
+      } else if (err.code === 'auth/weak-password') {
+        setError('Le mot de passe est trop faible');
+      } else if (err.message) {
+        setError(err.message);
       } else {
         setError('Une erreur est survenue lors de l\'inscription');
       }

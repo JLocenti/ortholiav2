@@ -9,16 +9,49 @@ import {
   query,
   where
 } from 'firebase/firestore';
-import { getAuth, listUsers } from 'firebase/auth';
-import { config } from '../config/firebase';
+import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
+import dotenv from 'dotenv';
+
+// Charger les variables d'environnement
+dotenv.config();
+
+const firebaseConfig = {
+  apiKey: process.env.VITE_FIREBASE_API_KEY,
+  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.VITE_FIREBASE_APP_ID,
+  measurementId: process.env.VITE_FIREBASE_MEASUREMENT_ID
+};
+
+// Vérifier que toutes les variables d'environnement nécessaires sont présentes
+const requiredEnvVars = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  'VITE_FIREBASE_APP_ID'
+];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
 
 // Initialize Firebase
-initializeApp(config);
-const db = getFirestore();
-const auth = getAuth();
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
 
-async function migrateSettings() {
+async function migrateSettings(email, password) {
   try {
+    console.log('Signing in...');
+    await signInWithEmailAndPassword(auth, email, password);
+    console.log('Successfully signed in');
+
     console.log('Starting settings migration...');
 
     // Get all theme settings
@@ -55,16 +88,19 @@ async function migrateSettings() {
       const userSettingsSnapshot = await getDocs(userSettingsQuery);
       const existingUserSettings = userSettingsSnapshot.docs[0]?.data() || {};
 
+      // Get current auth user
+      const currentUser = auth.currentUser;
+      
       // Merge all settings
       const updatedSettings = {
         ...existingUserSettings,
         userId,
         profile: {
           ...existingUserSettings.profile,
-          displayName: user.displayName || '',
+          displayName: currentUser?.displayName || user.displayName || '',
           firstName: user.firstName || '',
           lastName: user.lastName || '',
-          photoURL: user.photoURL || '',
+          photoURL: currentUser?.photoURL || user.photoURL || '',
           company: user.company || '',
           phone: user.phone || '',
           address: user.address || ''
@@ -94,8 +130,18 @@ async function migrateSettings() {
   }
 }
 
+// Check if email and password are provided as command line arguments
+const email = process.argv[2];
+const password = process.argv[3];
+
+if (!email || !password) {
+  console.error('Please provide email and password as arguments:');
+  console.error('node migrate-user-settings-auth.mjs <email> <password>');
+  process.exit(1);
+}
+
 // Run migration
-migrateSettings().then(() => {
+migrateSettings(email, password).then(() => {
   console.log('Migration script finished');
   process.exit(0);
 }).catch((error) => {

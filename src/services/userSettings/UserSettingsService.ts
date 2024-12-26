@@ -3,7 +3,11 @@ import {
   getDoc, 
   setDoc, 
   onSnapshot,
-  Firestore 
+  Firestore,
+  collection,
+  query,
+  where,
+  getDocs
 } from 'firebase/firestore';
 import { getAuth, updateProfile } from 'firebase/auth';
 import { db } from '../../config/firebase';
@@ -14,10 +18,13 @@ export interface UserTheme {
 }
 
 export interface UserProfile {
-  displayName?: string;
-  photoURL?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
   company?: string;
+  phone?: string;
   address?: string;
+  photoURL?: string;
 }
 
 export interface UserSettings {
@@ -44,6 +51,39 @@ class UserSettingsService {
     return UserSettingsService.instance;
   }
 
+  private async createDefaultSettings(
+    userId: string, 
+    firstName: string = '', 
+    lastName: string = '', 
+    email: string = '',
+    additionalProfileData: Partial<UserProfile> = {}
+  ): Promise<UserSettings> {
+    const defaultSettings: UserSettings = {
+      userId,
+      theme: {
+        darkMode: false,
+        primaryColor: '#4F46E5'
+      },
+      profile: {
+        firstName,
+        lastName,
+        email,
+        company: '',
+        phone: '',
+        address: '',
+        photoURL: '',
+        ...additionalProfileData
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const docRef = doc(this.db, this.COLLECTION_NAME, userId);
+    await setDoc(docRef, defaultSettings);
+
+    return defaultSettings;
+  }
+
   async getUserSettings(): Promise<UserSettings | null> {
     const auth = getAuth();
     const user = auth.currentUser;
@@ -53,30 +93,39 @@ class UserSettingsService {
       return null;
     }
 
-    const docRef = doc(this.db, this.COLLECTION_NAME, user.uid);
-    const docSnap = await getDoc(docRef);
+    try {
+      const docRef = doc(this.db, this.COLLECTION_NAME, user.uid);
+      const docSnap = await getDoc(docRef);
 
-    if (!docSnap.exists()) {
-      // Create default settings if none exist
-      const defaultSettings: UserSettings = {
-        userId: user.uid,
-        theme: {
-          darkMode: false,
-          primaryColor: '#0066cc'
-        },
-        profile: {
-          displayName: user.displayName || undefined,
-          photoURL: user.photoURL || undefined
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+      if (!docSnap.exists()) {
+        // Créer des paramètres par défaut avec toutes les données disponibles
+        return this.createDefaultSettings(user.uid, user.displayName?.split(' ')[0] || '', user.displayName?.split(' ')[1] || '', user.email);
+      }
+
+      const settings = docSnap.data() as UserSettings;
+      
+      // Vérifier que les paramètres appartiennent bien à l'utilisateur actuel
+      if (settings.userId !== user.uid) {
+        console.warn('User settings mismatch, creating new default settings');
+        return this.createDefaultSettings(user.uid, user.displayName?.split(' ')[0] || '', user.displayName?.split(' ')[1] || '', user.email);
+      }
+
+      // S'assurer qu'aucun champ n'est undefined
+      settings.profile = {
+        firstName: settings.profile?.firstName || '',
+        lastName: settings.profile?.lastName || '',
+        email: user.email || settings.profile?.email || '',
+        company: settings.profile?.company || '',
+        phone: settings.profile?.phone || '',
+        address: settings.profile?.address || '',
+        photoURL: user.photoURL || settings.profile?.photoURL || ''
       };
 
-      await this.updateUserSettings(defaultSettings);
-      return defaultSettings;
+      return settings;
+    } catch (error) {
+      console.error('Error getting user settings:', error);
+      return null;
     }
-
-    return docSnap.data() as UserSettings;
   }
 
   subscribeToUserSettings(callback: (settings: UserSettings | null) => void) {
@@ -91,11 +140,20 @@ class UserSettingsService {
 
     const docRef = doc(this.db, this.COLLECTION_NAME, user.uid);
     
-    return onSnapshot(docRef, (doc) => {
+    return onSnapshot(docRef, async (doc) => {
       if (doc.exists()) {
-        callback(doc.data() as UserSettings);
+        const settings = doc.data() as UserSettings;
+        
+        // Vérifier que les paramètres appartiennent bien à l'utilisateur actuel
+        if (settings.userId === user.uid) {
+          callback(settings);
+        } else {
+          const newSettings = await this.createDefaultSettings(user.uid, user.displayName?.split(' ')[0] || '', user.displayName?.split(' ')[1] || '', user.email);
+          callback(newSettings);
+        }
       } else {
-        this.getUserSettings().then(settings => callback(settings));
+        const newSettings = await this.createDefaultSettings(user.uid, user.displayName?.split(' ')[0] || '', user.displayName?.split(' ')[1] || '', user.email);
+        callback(newSettings);
       }
     }, (error) => {
       console.error('Error in user settings subscription:', error);
@@ -111,50 +169,69 @@ class UserSettingsService {
       throw new Error('No authenticated user');
     }
 
-    const docRef = doc(this.db, this.COLLECTION_NAME, user.uid);
-    const currentSettings = await this.getUserSettings();
-    
-    const updatedSettings: UserSettings = {
-      ...(currentSettings || {
-        userId: user.uid,
-        theme: {
-          darkMode: false,
-          primaryColor: '#0066cc'
-        },
-        profile: {},
-        createdAt: new Date().toISOString(),
-      }),
-      ...settings,
-      updatedAt: new Date().toISOString()
-    } as UserSettings;
-
-    // Update Firebase Auth profile if relevant fields are present
-    if (settings.profile) {
-      const { displayName, photoURL } = settings.profile;
-      if (displayName !== undefined || photoURL !== undefined) {
-        await updateProfile(user, {
-          displayName: displayName || user.displayName || null,
-          photoURL: photoURL || user.photoURL || null
-        });
+    try {
+      const docRef = doc(this.db, this.COLLECTION_NAME, user.uid);
+      const docSnap = await getDoc(docRef);
+      
+      let baseSettings: UserSettings;
+      if (!docSnap.exists()) {
+        baseSettings = await this.createDefaultSettings(user.uid, user.displayName?.split(' ')[0] || '', user.displayName?.split(' ')[1] || '', user.email);
+      } else {
+        baseSettings = docSnap.data() as UserSettings;
       }
-    }
 
-    await setDoc(docRef, updatedSettings);
+      const updatedSettings: UserSettings = {
+        ...baseSettings,
+        ...settings,
+        userId: user.uid,
+        updatedAt: new Date().toISOString()
+      };
+
+      await setDoc(docRef, updatedSettings);
+    } catch (error) {
+      console.error('Error updating user settings:', error);
+      throw error;
+    }
   }
 
   async updateTheme(theme: Partial<UserTheme>): Promise<void> {
+    const currentSettings = await this.getUserSettings();
+    if (!currentSettings) {
+      throw new Error('No user settings found');
+    }
+
     await this.updateUserSettings({
       theme: {
-        ...(await this.getUserSettings()).theme,
+        ...currentSettings.theme,
         ...theme
       }
     });
   }
 
   async updateProfile(profile: Partial<UserProfile>): Promise<void> {
+    const auth = getAuth();
+    const user = auth.currentUser;
+    
+    if (!user) {
+      throw new Error('No authenticated user');
+    }
+
+    // Mettre à jour le profil Firebase Auth si nécessaire
+    if (profile.firstName || profile.lastName || profile.photoURL) {
+      await updateProfile(user, {
+        displayName: `${profile.firstName} ${profile.lastName}`,
+        photoURL: profile.photoURL
+      });
+    }
+
+    const currentSettings = await this.getUserSettings();
+    if (!currentSettings) {
+      throw new Error('No user settings found');
+    }
+
     await this.updateUserSettings({
       profile: {
-        ...(await this.getUserSettings()).profile,
+        ...currentSettings.profile,
         ...profile
       }
     });
