@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, updateDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, updateDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { Patient } from '../../types/database';
 import { Question, Category } from '../../types/patient';
@@ -9,6 +9,8 @@ import { cn } from '../../lib/utils';
 import { Menu } from '@headlessui/react';
 import { EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 import { X, Trash2 } from 'lucide-react';
+import DeletePrescriptionConfirmationModal from './DeletePrescriptionConfirmationModal';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const predefinedColors = [
   '#4287f5', // blue
@@ -110,7 +112,28 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
   const [editingPrescriptionId, setEditingPrescriptionId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
+  const [existingPrescriptionIds, setExistingPrescriptionIds] = useState<string[]>([]);
+
+  const [deletingPrescriptionId, setDeletingPrescriptionId] = useState<string | null>(null);
+
   const focusedFieldRef = React.useRef<HTMLDivElement>(null);
+
+  const [scrollPosition, setScrollPosition] = useState(0);
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+  const scrollHorizontal = (direction: 'left' | 'right') => {
+    if (scrollContainerRef.current) {
+      const scrollAmount = 200; // Ajustez selon vos besoins
+      const currentScroll = scrollContainerRef.current.scrollLeft;
+      
+      scrollContainerRef.current.scrollTo({
+        left: direction === 'left' 
+          ? currentScroll - scrollAmount 
+          : currentScroll + scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   useEffect(() => {
     const loadFieldsData = async () => {
@@ -199,13 +222,15 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
   }, [isOpen, initialFields]);
 
   useEffect(() => {
-    const initialData = {
-      fileNumber: patient.fileNumber || '',
-      practitioner: patient.practitioner || (allowMultiplePractitioners ? [] : ''),
-      ...patient.fields
-    };
-    setLocalFormData(initialData);
-    setDebouncedFormData(initialData);
+    if (isOpen) {
+      const initialData = {
+        fileNumber: patient.fileNumber || '',
+        practitioner: patient.practitioner || (allowMultiplePractitioners ? [] : ''),
+        ...patient.fields
+      };
+      setLocalFormData(initialData);
+      setDebouncedFormData(initialData);
+    }
   }, [patient, allowMultiplePractitioners]);
 
   useEffect(() => {
@@ -238,6 +263,12 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
 
     return () => clearTimeout(timer);
   }, [debouncedPrescriptions]);
+
+  useEffect(() => {
+    if (patient.prescriptions) {
+      setExistingPrescriptionIds(Object.keys(patient.prescriptions));
+    }
+  }, [patient.prescriptions]);
 
   useEffect(() => {
     const hasFormChanges = JSON.stringify(localFormData) !== JSON.stringify({
@@ -438,85 +469,82 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
       const modalTitle = (
         <div className="flex items-center space-x-4">
           <span>Prescription</span>
-          <div className="flex space-x-2 text-sm">
-            {Object.entries(prescriptions).map(([id, prescription]) => (
-              <div key={id} className="relative group">
-                {editingPrescriptionId === id ? (
-                  <div className="flex items-center">
-                    <input
-                      type="text"
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      onBlur={() => handleFinishEdit(id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleFinishEdit(id);
-                        } else if (e.key === 'Escape') {
-                          setEditingPrescriptionId(null);
-                          setEditingName('');
-                        }
-                      }}
-                      className={cn(
-                        "px-3 py-1 rounded-full bg-white text-gray-900 border-2 border-indigo-600 focus:outline-none",
-                        "w-32 text-sm"
-                      )}
-                      autoFocus
-                    />
-                  </div>
-                ) : (
-                  <div className="flex items-center">
-                    <div
-                      className={cn(
-                        "px-3 py-1 rounded-full transition-colors relative group cursor-pointer",
-                        activePrescriptionId === id
-                          ? "bg-indigo-600 text-white"
-                          : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      )}
-                      onClick={() => {
-                        if (activePrescriptionId === id) {
-                          handleStartEdit(id, prescription.name);
-                        } else {
-                          setActivePrescriptionId(id);
-                        }
-                      }}
-                    >
-                      <span className="pr-6">{prescription.name}</span>
-                      {activePrescriptionId === id && (
-                        <span
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeletePrescription(id);
-                          }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                        >
-                          <X className="w-4 h-4 text-white hover:text-red-200" />
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-            <button
-              className="px-3 py-1 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300"
-              onClick={() => {
-                const newId = `prescription_${Date.now()}`;
-                setPrescriptions(prev => ({
-                  ...prev,
-                  [newId]: {
-                    name: `Prescription ${Object.keys(prev).length + 1}`,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                    maxillary: { bracketBrand: '', torqueType: '', position: '' },
-                    mandibular: { bracketBrand: '', torqueType: '', position: '' },
-                    unitPrescriptions: []
-                  }
-                }));
-                setActivePrescriptionId(newId);
+          <div className="flex items-center">
+            {Object.keys(prescriptions).length > 3 && (
+              <button 
+                onClick={() => scrollHorizontal('left')}
+                className="p-1 text-gray-500 hover:text-gray-700"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
+            <div 
+              ref={scrollContainerRef}
+              className="overflow-x-auto scrollbar-hide flex space-x-2 pb-2 mx-2"
+              style={{ 
+                scrollBehavior: 'smooth',
+                WebkitOverflowScrolling: 'touch' 
               }}
             >
-              +
-            </button>
+              <div className="flex space-x-2">
+                {Object.entries(prescriptions).map(([id, prescription]) => (
+                  <button
+                    key={id}
+                    onClick={() => setActivePrescriptionId(id)}
+                    className={cn(
+                      "px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap",
+                      activePrescriptionId === id
+                        ? "bg-indigo-600 text-white"
+                        : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+                    )}
+                  >
+                    {prescription.name || `Prescription ${Object.keys(prescriptions).indexOf(id) + 1}`}
+                    {/* Bouton de suppression */}
+                    {Object.keys(prescriptions).length > 1 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation(); // Empêche de changer l'onglet actif
+                          handleDeletePrescription(id);
+                        }}
+                        className="ml-2 p-1 text-gray-500 hover:text-red-600 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </button>
+                ))}
+                
+                {/* Bouton Ajouter une prescription */}
+                <button
+                  onClick={() => {
+                    const newId = `prescription_${Date.now()}`;
+                    setPrescriptions(prev => ({
+                      ...prev,
+                      [newId]: {
+                        name: `Prescription ${Object.keys(prev).length + 1}`,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                        maxillary: { bracketBrand: '', torqueType: '', position: '' },
+                        mandibular: { bracketBrand: '', torqueType: '', position: '' },
+                        unitPrescriptions: []
+                      }
+                    }));
+                    setActivePrescriptionId(newId);
+                  }}
+                  className="px-4 py-2 text-sm font-medium rounded-lg bg-green-500 text-white hover:bg-green-600 transition-colors whitespace-nowrap"
+                >
+                  + Ajouter une prescription
+                </button>
+              </div>
+            </div>
+            {Object.keys(prescriptions).length > 3 && (
+              <button 
+                onClick={() => scrollHorizontal('right')}
+                className="p-1 text-gray-500 hover:text-gray-700"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </div>
       );
@@ -775,15 +803,15 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
               <div className="flex justify-center mt-4">
                 <button
                   onClick={handleAddUnitPrescription}
-                  disabled={!canAddPrescription()}
                   className={cn(
                     "inline-flex items-center px-4 py-2 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500",
-                    canAddPrescription()
-                      ? "text-white bg-indigo-600 hover:bg-indigo-700"
-                      : "text-gray-400 bg-gray-100 cursor-not-allowed"
+                    "text-white bg-indigo-600 hover:bg-indigo-700"
                   )}
                 >
-                  Ajouter la prescription unitaire
+                  {existingPrescriptionIds.includes(activePrescriptionId)
+                    ? "Modifier la prescription"
+                    : "Ajouter la prescription"
+                  }
                 </button>
               </div>
 
@@ -856,8 +884,8 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
   };
 
   const handleAddUnitPrescription = () => {
-    if (!selectedPosition || selectedTeeth.length === 0) {
-      alert('Veuillez sélectionner au moins une dent et une position.');
+    // Si tous les champs sont vides, on n'ajoute pas de prescription unitaire
+    if (!selectedTeeth.length && !selectedPosition && !selectedBracketBrand && !selectedTorqueType) {
       return;
     }
 
@@ -880,7 +908,7 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
     setPrescriptions(newPrescriptions);
     setDebouncedPrescriptions(newPrescriptions);
 
-    setHasChanges(true); // Marquer qu'il y a eu des changements
+    setHasChanges(true);
     setSelectedTeeth([]);
     setSelectedPosition('');
     setSelectedBracketBrand('');
@@ -930,18 +958,50 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
   };
 
   const handleDeletePrescription = (id: string) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette prescription ?')) {
-      const { [id]: removed, ...remainingPrescriptions } = prescriptions;
-      const newPrescriptions = remainingPrescriptions;
+    setDeletingPrescriptionId(id);
+  };
 
-      setPrescriptions(newPrescriptions);
-      setDebouncedPrescriptions(newPrescriptions);
-
-      if (activePrescriptionId === id) {
-        setActivePrescriptionId(Object.keys(newPrescriptions)[0] || '');
+  const confirmDeletePrescription = async () => {
+    if (deletingPrescriptionId) {
+      try {
+        // Mettre à jour l'état local
+        const newPrescriptions = { ...prescriptions };
+        delete newPrescriptions[deletingPrescriptionId];
+        
+        setPrescriptions(newPrescriptions);
+        setDebouncedPrescriptions(newPrescriptions);
+        setHasChanges(true);
+        
+        // Supprimer de Firestore
+        const fieldsCollection = collection(db, 'fields');
+        const fieldsSnapshot = await getDocs(fieldsCollection);
+        
+        fieldsSnapshot.forEach(async (fieldDoc) => {
+          const fieldData = fieldDoc.data();
+          if (fieldData.prescriptions && fieldData.prescriptions[deletingPrescriptionId]) {
+            const fieldDocRef = doc(db, 'fields', fieldDoc.id);
+            
+            // Supprimer spécifiquement cette prescription
+            const updatedPrescriptions = { ...fieldData.prescriptions };
+            delete updatedPrescriptions[deletingPrescriptionId];
+            
+            await updateDoc(fieldDocRef, {
+              prescriptions: updatedPrescriptions
+            });
+          }
+        });
+        
+        // Si la prescription supprimée était active, activer une autre
+        if (deletingPrescriptionId === activePrescriptionId) {
+          const remainingIds = Object.keys(newPrescriptions);
+          if (remainingIds.length > 0) {
+            setActivePrescriptionId(remainingIds[0]);
+          }
+        }
+      } catch (error) {
+        console.error("Erreur lors de la suppression de la prescription :", error);
+        // Optionnel : afficher un message d'erreur à l'utilisateur
       }
-
-      setHasChanges(true); // Marquer qu'il y a eu des changements
     }
   };
 
@@ -960,7 +1020,7 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
   };
 
   const canAddPrescription = () => {
-    return selectedPosition && selectedTeeth.length > 0;
+    return true; // Toujours permettre l'ajout de prescription
   };
 
   const handlePrescriptionClick = () => {
@@ -1151,6 +1211,16 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {renderContent()}
       </div>
+
+      {/* Modale de confirmation de suppression */}
+      {deletingPrescriptionId && (
+        <DeletePrescriptionConfirmationModal
+          isOpen={true}
+          onClose={() => setDeletingPrescriptionId(null)}
+          onConfirm={confirmDeletePrescription}
+          prescriptionName={prescriptions[deletingPrescriptionId]?.name || ''}
+        />
+      )}
     </Modal>
   );
 };
