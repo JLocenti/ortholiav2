@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, doc, Timestamp, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, Timestamp, onSnapshot, deleteDoc, query, where } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
 import { ViewPreference } from '../types/view';
 import { fieldService } from '../services/fieldService';
@@ -98,7 +98,10 @@ export function ViewProvider({ children }: { children: React.ReactNode }) {
     const unsubscribeAuth = auth.onAuthStateChanged(user => {
       console.log("État de l'authentification:", user ? "Connecté" : "Non connecté");
       if (user) {
-        loadViews();
+        // Ne pas recharger les vues si elles existent déjà
+        if (viewPreferences.length === 0) {
+          loadViews();
+        }
       } else {
         console.log("Utilisateur non connecté, impossible de charger les vues");
         setViewPreferences([]);
@@ -107,18 +110,22 @@ export function ViewProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => unsubscribeAuth();
-  }, []);
+  }, [viewPreferences.length]);
 
   // Configurer un écouteur en temps réel pour les mises à jour
   useEffect(() => {
+    if (!auth.currentUser) return;
+
     const viewPrefsCollection = collection(db, 'viewPreferences');
-    const unsubscribe = onSnapshot(viewPrefsCollection, (snapshot) => {
+    const q = query(viewPrefsCollection, where('userId', '==', auth.currentUser.uid));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const updatedViews = snapshot.docs.map(doc => ({
         id: doc.id,
         ...convertTimestamps(doc.data())
       })) as ViewPreference[];
+      
       setViewPreferences(updatedViews.sort((a, b) => {
-        // S'assurer que les dates sont valides
         const dateA = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
         const dateB = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
         return dateA - dateB;
@@ -128,7 +135,7 @@ export function ViewProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [auth.currentUser]);
 
   const refreshViews = async () => {
     const updatedViews = await loadViewsFromFirebase();

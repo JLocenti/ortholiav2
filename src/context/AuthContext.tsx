@@ -63,13 +63,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (settingsDoc.exists()) {
               setUserSettings(settingsDoc.data() as UserSettings);
             }
-
-            // Initialiser les préférences de vue
-            try {
-              await initializeViewPreferences(firebaseUser.uid);
-            } catch (error) {
-              console.error('Erreur lors de l\'initialisation des préférences:', error);
-            }
           }
         } else {
           setCurrentUser(null);
@@ -127,6 +120,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           themeColor: '#3B82F6'
         };
 
+        // Initialiser les vues par défaut uniquement pour un nouvel utilisateur
+        await initializeViewPreferences(userCredential.user.uid);
+
         // Sauvegarder les données dans Firestore
         await Promise.all([
           setDoc(doc(db, 'users', userCredential.user.uid), newUser),
@@ -144,41 +140,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const settingsDoc = await getDoc(doc(db, 'userSettings', userCredential.user.uid));
         if (settingsDoc.exists()) {
           setUserSettings(settingsDoc.data() as UserSettings);
-        } else {
-          const defaultSettings: UserSettings = {
-            defaultViewId: 'global',
-            customViews: [],
-            theme: 'light',
-            themeColor: '#3B82F6'
-          };
-          await setDoc(doc(db, 'userSettings', userCredential.user.uid), defaultSettings);
-          setUserSettings(defaultSettings);
         }
       }
 
       setIsAuthenticated(true);
-      
-      // Initialiser les préférences de vue
-      await initializeViewPreferences(userCredential.user.uid);
-
     } catch (error: any) {
       console.error('Erreur de connexion:', error);
-      
-      // Gérer les erreurs Firebase Auth
-      switch (error.code) {
-        case 'auth/invalid-email':
-          throw new Error('Adresse email invalide');
-        case 'auth/user-disabled':
-          throw new Error('Ce compte a été désactivé');
-        case 'auth/user-not-found':
-          throw new Error('Aucun compte trouvé avec cette adresse email');
-        case 'auth/wrong-password':
-          throw new Error('Mot de passe incorrect');
-        case 'auth/invalid-credential':
-          throw new Error('Email ou mot de passe incorrect');
-        default:
-          throw new Error('Une erreur est survenue lors de la connexion');
-      }
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -224,6 +192,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         themeColor: '#3B82F6'
       };
 
+      // Initialiser les vues par défaut pour le nouvel utilisateur
+      await initializeViewPreferences(userCredential.user.uid);
+
       // Sauvegarder les données utilisateur dans Firestore
       await setDoc(doc(db, 'users', userCredential.user.uid), newUser);
       await setDoc(doc(db, 'userSettings', userCredential.user.uid), newSettings);
@@ -231,9 +202,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentUser(newUser);
       setUserSettings(newSettings);
       setIsAuthenticated(true);
-
-      // Initialiser les préférences de vue
-      await initializeViewPreferences(userCredential.user.uid);
       
       navigate('/');
     } catch (error) {

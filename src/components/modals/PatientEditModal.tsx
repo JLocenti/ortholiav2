@@ -465,9 +465,9 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                   </div>
                 ) : (
                   <div className="flex items-center">
-                    <button
+                    <div
                       className={cn(
-                        "px-3 py-1 rounded-full transition-colors relative group",
+                        "px-3 py-1 rounded-full transition-colors relative group cursor-pointer",
                         activePrescriptionId === id
                           ? "bg-indigo-600 text-white"
                           : "bg-gray-200 text-gray-700 hover:bg-gray-300"
@@ -482,17 +482,17 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                     >
                       <span className="pr-6">{prescription.name}</span>
                       {activePrescriptionId === id && (
-                        <button
+                        <span
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDeletePrescription(id);
                           }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                         >
                           <X className="w-4 h-4 text-white hover:text-red-200" />
-                        </button>
+                        </span>
                       )}
-                    </button>
+                    </div>
                   </div>
                 )}
               </div>

@@ -22,10 +22,10 @@ export function ViewPreferencesProvider({ children }: { children: React.ReactNod
 
   // Charger les préférences de l'utilisateur
   useEffect(() => {
-    if (user) {
+    if (user && viewPreferences.length === 0) {
       loadUserPreferences();
     }
-  }, [user]);
+  }, [user, viewPreferences.length]);
 
   const loadUserPreferences = async () => {
     if (!user) return;
@@ -41,7 +41,10 @@ export function ViewPreferencesProvider({ children }: { children: React.ReactNod
       preferences.push({ id: doc.id, ...doc.data() } as ViewPreferences);
     });
 
-    setViewPreferences(preferences);
+    // Ne pas écraser les préférences existantes
+    if (preferences.length > 0) {
+      setViewPreferences(preferences);
+    }
   };
 
   const createViewPreference = async (viewData: Partial<ViewPreferences>) => {
