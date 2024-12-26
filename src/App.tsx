@@ -34,12 +34,14 @@ function ProtectedRoute({ children }: ProtectedRouteProps) {
 }
 
 function AppContent() {
+  const { isAuthenticated } = useAuth();
+
   useEffect(() => {
-    // Initialiser les icônes des catégories
-    categoryService.initializeCategoryIcons().catch(console.error);
-    // Initialiser l'ordre des champs dans les catégories
-    categoryService.initializeFieldsOrder().catch(console.error);
-  }, []);
+    if (isAuthenticated) {
+      // Initialiser l'ordre des champs dans les catégories
+      categoryService.initializeFieldsOrder().catch(console.error);
+    }
+  }, [isAuthenticated]);
 
   return (
     <ThemeProvider>

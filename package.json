@@ -8,9 +8,13 @@
     "build": "tsc && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "init:user": "node server/scripts/initializeNewUserData.js",
+    "migrate:user": "node server/scripts/migrateUserId.js",
     "migrate:fields": "tsx src/scripts/syncFieldsWithCategories.ts",
     "migrate:fields-format": "tsx src/scripts/migrateFieldsFormat.ts",
-    "init:fields-order": "tsx src/scripts/initializeFieldsOrder.ts"
+    "init:fields-order": "tsx src/scripts/initializeFieldsOrder.ts",
+    "server": "node server/server.js",
+    "dev:all": "concurrently \"npm run dev\" \"npm run server\""
   },
   "dependencies": {
     "@headlessui/react": "^1.7.17",
@@ -20,6 +24,8 @@
     "@tailwindcss/forms": "^0.5.7",
     "clsx": "^2.0.0",
     "compression": "^1.7.4",
+    "concurrently": "^9.1.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "firebase": "^10.7.1",

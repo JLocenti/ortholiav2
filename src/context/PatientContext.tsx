@@ -11,6 +11,7 @@ import {
   onSnapshot 
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { useAuth } from './AuthContext';
 
 interface PatientContextType {
   patients: Patient[];
@@ -27,13 +28,21 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { currentUser } = useAuth();
 
   // Mettre en place le listener Firestore
   useEffect(() => {
+    if (!currentUser) {
+      setError('Utilisateur non authentifié');
+      setLoading(false);
+      return;
+    }
+
     const patientsRef = collection(db, 'patients');
+    const q = query(patientsRef, where('userId', '==', currentUser.uid));
     
     // Créer un listener pour les mises à jour en temps réel
-    const unsubscribe = onSnapshot(patientsRef, 
+    const unsubscribe = onSnapshot(q, 
       (snapshot) => {
         const patientsData: Patient[] = [];
         snapshot.forEach((doc) => {
@@ -54,14 +63,15 @@ export function PatientProvider({ children }: { children: React.ReactNode }) {
 
     // Nettoyer le listener quand le composant est démonté
     return () => unsubscribe();
-  }, []);
+  }, [currentUser]);
 
   const addPatient = async (newPatient: Omit<Patient, 'id'>) => {
     try {
       const docRef = await addDoc(collection(db, 'patients'), {
         ...newPatient,
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        userId: currentUser.uid
       });
       
       return docRef.id;

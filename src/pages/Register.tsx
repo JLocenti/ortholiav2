@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 
 export default function Register() {
   const navigate = useNavigate();
-  const { register } = useAuth();
+  const { createUser } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
@@ -51,8 +51,7 @@ export default function Register() {
     }
 
     try {
-      await register(formData);
-      navigate('/');
+      await createUser(formData.email, formData.password);
     } catch (err) {
       console.error('Erreur d\'inscription:', err);
       if (err instanceof Error) {
@@ -211,7 +210,7 @@ export default function Register() {
                   name="address"
                   value={formData.address}
                   onChange={handleChange}
-                  placeholder="Votre adresse complète"
+                  placeholder="Votre adresse"
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 placeholder-gray-500 focus:ring-ortholia-blue focus:border-ortholia-blue"
                 />
                 <MapPin className="absolute right-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -219,24 +218,26 @@ export default function Register() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <Link
-              to="/login"
-              className="text-sm font-medium text-ortholia-blue hover:text-ortholia-purple"
+          <div>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-ortholia-blue hover:bg-ortholia-blue-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ortholia-blue ${
+                isLoading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
-              Déjà un compte ? Se connecter
-            </Link>
+              {isLoading ? 'Création en cours...' : 'Créer mon compte'}
+            </button>
           </div>
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-ortholia-blue hover:bg-ortholia-purple focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ortholia-blue ${
-              isLoading ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            {isLoading ? 'Inscription en cours...' : 'S\'inscrire'}
-          </button>
+          <div className="text-center mt-4">
+            <p className="text-sm text-gray-600">
+              Déjà un compte ?{' '}
+              <Link to="/login" className="font-medium text-ortholia-blue hover:text-ortholia-blue-dark">
+                Connectez-vous
+              </Link>
+            </p>
+          </div>
         </form>
       </div>
     </div>

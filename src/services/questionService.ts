@@ -1,7 +1,8 @@
 import { Question, Choice } from '../types/patient';
 import { defaultQuestions } from '../constants/defaultQuestions';
 import { db } from '../config/firebase';
-import { doc, setDoc, getDoc, collection, getDocs, query, writeBatch, updateDoc } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
+import { doc, setDoc, getDoc, collection, getDocs, query, writeBatch, updateDoc, where } from 'firebase/firestore';
 
 class QuestionService {
   private static instance: QuestionService;
@@ -21,8 +22,14 @@ class QuestionService {
     if (this.initialized) return;
     
     try {
+      const { currentUser } = getAuth();
+      if (!currentUser) {
+        throw new Error('User must be authenticated to initialize questions');
+      }
+
       const questionsRef = collection(db, 'questions');
-      const querySnapshot = await getDocs(query(questionsRef));
+      const q = query(questionsRef, where('userId', '==', currentUser.uid));
+      const querySnapshot = await getDocs(q);
       
       if (!querySnapshot.empty) {
         const loadedQuestions = querySnapshot.docs.map(doc => ({
@@ -42,6 +49,100 @@ class QuestionService {
     }
   }
 
+  private async saveQuestionsToFirestore(questions: Question[]): Promise<void> {
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      throw new Error('User must be authenticated to save questions');
+    }
+
+    const batch = writeBatch(db);
+    const questionsRef = collection(db, 'questions');
+
+    questions.forEach(question => {
+      const docRef = doc(questionsRef);
+      batch.set(docRef, {
+        ...question,
+        userId: currentUser.uid,
+        updatedAt: new Date().toISOString()
+      });
+    });
+
+    await batch.commit();
+  }
+
+  async getQuestions(): Promise<Question[]> {
+    await this.initialize();
+    return this.questions;
+  }
+
+  async updateQuestion(questionId: string, updates: Partial<Question>): Promise<void> {
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      throw new Error('User must be authenticated to update question');
+    }
+
+    // Vérifier que la question appartient à l'utilisateur
+    const questionRef = doc(db, 'questions', questionId);
+    const questionSnap = await getDoc(questionRef);
+    
+    if (!questionSnap.exists() || questionSnap.data().userId !== currentUser.uid) {
+      throw new Error('Unauthorized access to update question');
+    }
+
+    await updateDoc(questionRef, {
+      ...updates,
+      userId: currentUser.uid,
+      updatedAt: new Date().toISOString()
+    });
+
+    // Update local cache
+    this.questions = this.questions.map(q =>
+      q.id === questionId ? { ...q, ...updates } : q
+    );
+  }
+
+  async addChoice(questionId: string, choice: Choice): Promise<void> {
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      throw new Error('User must be authenticated to add choice');
+    }
+
+    const question = this.questions.find(q => q.id === questionId);
+    if (!question) throw new Error('Question not found');
+
+    const updatedChoices = [...(question.choices || []), choice];
+    await this.updateQuestion(questionId, { choices: updatedChoices });
+  }
+
+  async updateChoice(questionId: string, choiceId: string, updates: Partial<Choice>): Promise<void> {
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      throw new Error('User must be authenticated to update choice');
+    }
+
+    const question = this.questions.find(q => q.id === questionId);
+    if (!question) throw new Error('Question not found');
+
+    const updatedChoices = question.choices?.map(c =>
+      c.id === choiceId ? { ...c, ...updates } : c
+    );
+
+    await this.updateQuestion(questionId, { choices: updatedChoices });
+  }
+
+  async deleteChoice(questionId: string, choiceId: string): Promise<void> {
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      throw new Error('User must be authenticated to delete choice');
+    }
+
+    const question = this.questions.find(q => q.id === questionId);
+    if (!question) throw new Error('Question not found');
+
+    const updatedChoices = question.choices?.filter(c => c.id !== choiceId);
+    await this.updateQuestion(questionId, { choices: updatedChoices });
+  }
+
   private mergeWithDefaultQuestions(loadedQuestions: Question[]): Question[] {
     return defaultQuestions.map(defaultQ => {
       const loadedQ = loadedQuestions.find(q => q.id === defaultQ.id);
@@ -50,138 +151,12 @@ class QuestionService {
           ...defaultQ,
           choices: loadedQ.choices?.map(loadedChoice => {
             const defaultChoice = defaultQ.choices?.find(c => c.id === loadedChoice.id);
-            return {
-              ...defaultChoice,
-              ...loadedChoice,
-              color: loadedChoice.color || defaultChoice?.color || '#3B82F6'
-            };
+            return defaultChoice ? { ...defaultChoice, ...loadedChoice } : loadedChoice;
           }) || defaultQ.choices
         };
       }
       return defaultQ;
     });
-  }
-
-  private async saveQuestionsToFirestore(questions: Question[]) {
-    try {
-      const batch = writeBatch(db);
-      
-      questions.forEach(question => {
-        if (question.choices) {
-          // Ensure each choice has a color
-          question.choices = question.choices.map(choice => ({
-            ...choice,
-            color: choice.color || '#3B82F6'
-          }));
-        }
-        const docRef = doc(db, 'questions', question.id);
-        batch.set(docRef, {
-          ...question,
-          updatedAt: new Date().toISOString()
-        });
-      });
-
-      await batch.commit();
-    } catch (error) {
-      console.error('Error saving questions to Firestore:', error);
-      throw error;
-    }
-  }
-
-  async getQuestions(): Promise<Question[]> {
-    if (!this.initialized) {
-      await this.initialize();
-    }
-    return this.questions;
-  }
-
-  async updateQuestionColor(questionId: string, choiceId: string, newColor: string): Promise<void> {
-    try {
-      if (!this.initialized) {
-        await this.initialize();
-      }
-
-      const question = this.questions.find(q => q.id === questionId);
-      if (!question || !question.choices) return;
-
-      const updatedQuestion = {
-        ...question,
-        choices: question.choices.map(choice =>
-          choice.id === choiceId ? { ...choice, color: newColor } : choice
-        ),
-        updatedAt: new Date().toISOString()
-      };
-
-      // Update Firestore
-      const docRef = doc(db, 'questions', questionId);
-      await updateDoc(docRef, {
-        choices: updatedQuestion.choices,
-        updatedAt: updatedQuestion.updatedAt
-      });
-
-      // Update local cache
-      this.questions = this.questions.map(q =>
-        q.id === questionId ? updatedQuestion : q
-      );
-    } catch (error) {
-      console.error('Error updating question color:', error);
-      throw error;
-    }
-  }
-
-  async saveQuestion(question: Question): Promise<void> {
-    try {
-      if (!this.initialized) {
-        await this.initialize();
-      }
-
-      // Ensure all choices have colors
-      if (question.choices) {
-        question.choices = question.choices.map(choice => ({
-          ...choice,
-          color: choice.color || '#3B82F6'
-        }));
-      }
-
-      const updatedQuestion = {
-        ...question,
-        updatedAt: new Date().toISOString()
-      };
-
-      // Update Firestore
-      const docRef = doc(db, 'questions', question.id);
-      await setDoc(docRef, updatedQuestion);
-
-      // Update local cache
-      this.questions = this.questions.map(q =>
-        q.id === question.id ? updatedQuestion : q
-      );
-    } catch (error) {
-      console.error('Error saving question:', error);
-      throw error;
-    }
-  }
-
-  async saveQuestions(questions: Question[]): Promise<void> {
-    try {
-      if (!this.initialized) {
-        await this.initialize();
-      }
-
-      const questionsWithColors = questions.map(question => ({
-        ...question,
-        choices: question.choices?.map(choice => ({
-          ...choice,
-          color: choice.color || '#3B82F6'
-        }))
-      }));
-
-      await this.saveQuestionsToFirestore(questionsWithColors);
-      this.questions = questionsWithColors;
-    } catch (error) {
-      console.error('Error saving questions:', error);
-      throw error;
-    }
   }
 }
 

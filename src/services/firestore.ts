@@ -14,6 +14,7 @@ import {
   Firestore,
   getDoc
 } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { db } from '../config/firebase';
 import { Category } from '../types/patient';
 import { Patient } from '../types/view';
@@ -22,18 +23,42 @@ import { Practitioner } from '../types/practitioner';
 export const firestoreService = {
   // Patients
   subscribeToPatients(callback: (patients: Patient[]) => void) {
-    const patientsRef = collection(db, 'patients');
-    const q = query(patientsRef, orderBy('updatedAt', 'desc'));
+    const auth = getAuth();
+    
+    // On écoute les changements d'authentification
+    const unsubscribeAuth = auth.onAuthStateChanged(user => {
+      if (!user) {
+        callback([]);
+        return;
+      }
 
-    return onSnapshot(q, (snapshot) => {
-      const patients = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Patient[];
-      callback(patients);
-    }, (error) => {
-      console.error('Error subscribing to patients:', error);
+      const patientsRef = collection(db, 'patients');
+      const q = query(
+        patientsRef,
+        where('userId', '==', user.uid),
+        orderBy('updatedAt', 'desc')
+      );
+
+      const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+        const patients = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Patient[];
+        callback(patients);
+      }, (error) => {
+        console.error('Error subscribing to patients:', error);
+      });
+
+      // Nettoyer le listener quand l'utilisateur se déconnecte
+      return () => {
+        unsubscribeSnapshot();
+      };
     });
+
+    // Retourner une fonction pour nettoyer les deux listeners
+    return () => {
+      unsubscribeAuth();
+    };
   },
 
   async addPatient(patientData: Omit<Patient, 'id'>) {

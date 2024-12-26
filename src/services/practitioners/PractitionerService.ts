@@ -1,5 +1,6 @@
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { getAuth } from 'firebase/auth';
 import { Practitioner } from '../../types/practitioner';
 
 export class PractitionerService {
@@ -18,18 +19,27 @@ export class PractitionerService {
   }
 
   subscribe(callback: (practitioners: Practitioner[]) => void): () => void {
+    this.subscribers.push(callback);
     if (!this.initialized) {
       this.initializeSubscription();
     }
-
-    this.subscribers.push(callback);
     return () => {
       this.subscribers = this.subscribers.filter(cb => cb !== callback);
     };
   }
 
   private initializeSubscription() {
-    const q = query(collection(db, this.collectionName), orderBy('createdAt', 'desc'));
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      console.error('User must be authenticated to initialize practitioners');
+      return;
+    }
+
+    const q = query(
+      collection(db, this.collectionName),
+      where('userId', '==', currentUser.uid)
+    );
+
     onSnapshot(q, (snapshot) => {
       const practitioners = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -43,25 +53,42 @@ export class PractitionerService {
   }
 
   async savePractitioner(data: Omit<Practitioner, 'id' | 'createdAt' | 'updatedAt'>): Promise<void> {
-    const now = new Date().toISOString();
-    await addDoc(collection(db, this.collectionName), {
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      throw new Error('User must be authenticated to save practitioner');
+    }
+
+    const docRef = doc(collection(db, this.collectionName));
+    await setDoc(docRef, {
       ...data,
-      createdAt: now,
-      updatedAt: now,
+      id: docRef.id,
+      userId: currentUser.uid,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     });
   }
 
   async updatePractitioner(id: string, data: Partial<Omit<Practitioner, 'id' | 'createdAt'>>): Promise<void> {
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      throw new Error('User must be authenticated to update practitioner');
+    }
+
     const docRef = doc(db, this.collectionName, id);
-    await updateDoc(docRef, {
+    await setDoc(docRef, {
       ...data,
-      updatedAt: new Date().toISOString(),
-    });
+      userId: currentUser.uid,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
   }
 
   async deletePractitioner(id: string): Promise<void> {
-    const docRef = doc(db, this.collectionName, id);
-    await deleteDoc(docRef);
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      throw new Error('User must be authenticated to delete practitioner');
+    }
+
+    await deleteDoc(doc(db, this.collectionName, id));
   }
 }
 

@@ -12,11 +12,13 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Category } from '../types/category';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 
 class CategoryService {
   private static instance: CategoryService | null = null;
   private db: Firestore;
   private readonly COLLECTION_NAME = 'categories';
+  private initialized = false;
 
   private constructor() {
     this.db = db;
@@ -34,126 +36,155 @@ class CategoryService {
   }
 
   subscribeToCategories(callback: (categories: Category[]) => void) {
-    const categoriesRef = this.getCollection();
-    const q = query(categoriesRef, orderBy('order', 'asc'));
+    const auth = getAuth();
+    console.log('Starting categories subscription');
     
-    return onSnapshot(q, (snapshot) => {
-      const categories = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Category[];
-      callback(categories);
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      console.log('Auth state changed:', user?.uid);
+      
+      if (!user) {
+        console.log('No user, returning empty categories');
+        callback([]);
+        return;
+      }
+
+      const categoriesRef = this.getCollection();
+      // Temporairement, on ne trie pas pour éviter l'erreur d'index
+      const q = query(
+        categoriesRef,
+        where('userId', '==', user.uid)
+      );
+      
+      console.log('Setting up categories listener for user:', user.uid);
+      
+      const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+        console.log('Categories snapshot received, count:', snapshot.docs.length);
+        const categories = snapshot.docs.map(doc => {
+          const data = doc.data();
+          console.log('Category data:', { id: doc.id, ...data });
+          return {
+            id: doc.id,
+            ...data
+          };
+        }) 
+        // On trie après avoir reçu les données
+        .sort((a, b) => (a.order || 0) - (b.order || 0)) as Category[];
+        
+        callback(categories);
+      }, (error) => {
+        console.error('Error in categories subscription:', error);
+        callback([]);
+      });
+
+      return () => {
+        console.log('Cleaning up categories subscription');
+        unsubscribeSnapshot();
+      };
     });
+
+    return () => {
+      console.log('Cleaning up auth subscription');
+      unsubscribeAuth();
+    };
   }
 
   async getCategories(): Promise<Category[]> {
-    const categoriesRef = this.getCollection();
-    const q = query(categoriesRef, orderBy('order', 'asc'));
-    const snapshot = await getDocs(q);
+    const { currentUser } = getAuth();
+    console.log('Getting categories for user:', currentUser?.uid);
     
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Category[];
+    if (!currentUser) {
+      console.log('No user, returning empty categories array');
+      return [];
+    }
+
+    const categoriesRef = this.getCollection();
+    // Temporairement, on ne trie pas pour éviter l'erreur d'index
+    const q = query(
+      categoriesRef,
+      where('userId', '==', currentUser.uid)
+    );
+    
+    console.log('Fetching categories with query');
+    const snapshot = await getDocs(q);
+    console.log('Categories fetched, count:', snapshot.docs.length);
+    
+    return snapshot.docs
+      .map(doc => {
+        const data = doc.data();
+        console.log('Category data:', { id: doc.id, ...data });
+        return {
+          id: doc.id,
+          ...data
+        };
+      })
+      // On trie après avoir reçu les données
+      .sort((a, b) => (a.order || 0) - (b.order || 0)) as Category[];
   }
 
   async updateCategory(categoryId: string, updates: Partial<Category>): Promise<void> {
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      throw new Error('User must be authenticated to update category');
+    }
+
     const docRef = doc(this.db, this.COLLECTION_NAME, categoryId);
     await updateDoc(docRef, {
       ...updates,
+      userId: currentUser.uid,
       updatedAt: new Date().toISOString()
     });
   }
 
-  async updateCategoryIcon(categoryId: string, icon: string): Promise<void> {
-    const categoryRef = doc(this.db, this.COLLECTION_NAME, categoryId);
-    const now = new Date().toISOString();
-    await updateDoc(categoryRef, { 
-      icon,
-      updatedAt: now
-    });
-  }
+  async updateCategoriesOrder(categories: Category[]): Promise<void> {
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      throw new Error('User must be authenticated to update categories order');
+    }
 
-  async updateFieldsOrder(categoryId: string, fieldsOrder: { id: string; order: number; }[]): Promise<void> {
-    const categoryRef = doc(this.db, this.COLLECTION_NAME, categoryId);
-    const now = new Date().toISOString();
-    
-    await updateDoc(categoryRef, {
-      fieldsOrder,
-      updatedAt: now
-    });
-  }
-
-  async syncFieldsOrder(categoryId: string, fieldIds: string[]): Promise<void> {
-    // Crée un nouvel ordre basé sur la liste des IDs
-    const fieldsOrder = fieldIds.map((id, index) => ({
-      id,
-      order: index
-    }));
-
-    await this.updateFieldsOrder(categoryId, fieldsOrder);
-  }
-
-  async initializeCategoryIcons(): Promise<void> {
-    const categories = await this.getCategories();
     const batch = writeBatch(this.db);
-    const now = new Date().toISOString();
 
-    categories.forEach(category => {
-      if (!category.icon) {
-        const categoryRef = doc(this.db, this.COLLECTION_NAME, category.id);
-        batch.update(categoryRef, {
-          icon: 'FileText', // Icône par défaut
-          updatedAt: now
-        });
-      }
+    categories.forEach((category, index) => {
+      const docRef = doc(this.db, this.COLLECTION_NAME, category.id);
+      batch.update(docRef, { 
+        order: index,
+        userId: currentUser.uid,
+        updatedAt: new Date().toISOString()
+      });
     });
 
     await batch.commit();
   }
 
   async initializeFieldsOrder(): Promise<void> {
-    const categories = await this.getCategories();
-    const batch = writeBatch(this.db);
-    const now = new Date().toISOString();
-
-    for (const category of categories) {
-      if (!category.fieldsOrder) {
-        const categoryRef = doc(this.db, this.COLLECTION_NAME, category.id);
-        
-        // Récupérer les champs de la catégorie
-        const fieldsSnapshot = await getDocs(
-          query(
-            collection(this.db, 'fields'),
-            where('categoryId', '==', category.id),
-            orderBy('order', 'asc')
-          )
-        );
-
-        const fieldsOrder = fieldsSnapshot.docs.map((doc, index) => ({
-          id: doc.id,
-          order: index
-        }));
-
-        batch.update(categoryRef, {
-          fieldsOrder,
-          updatedAt: now
-        });
-      }
+    const { currentUser } = getAuth();
+    if (!currentUser) {
+      console.log('No user for initializeFieldsOrder, returning');
+      return;
     }
 
-    await batch.commit();
-  }
-
-  async updateCategoriesOrder(categories: Category[]): Promise<void> {
-    const batch = writeBatch(this.db);
+    console.log('Initializing fields order for user:', currentUser.uid);
+    const categories = await this.getCategories();
     
-    categories.forEach(category => {
+    if (categories.length === 0) {
+      console.log('No categories found, skipping initialization');
+      return;
+    }
+
+    console.log('Found categories:', categories.length);
+    const batch = writeBatch(this.db);
+
+    categories.forEach((category, index) => {
       const docRef = doc(this.db, this.COLLECTION_NAME, category.id);
-      batch.update(docRef, { order: category.order });
+      batch.update(docRef, { 
+        order: index,
+        userId: currentUser.uid,
+        updatedAt: new Date().toISOString()
+      });
     });
 
+    console.log('Committing batch update for fields order');
     await batch.commit();
+    console.log('Fields order initialized successfully');
   }
 }
 

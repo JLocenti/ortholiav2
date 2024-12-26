@@ -1,5 +1,6 @@
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { getAuth } from 'firebase/auth';
 import { ThemeSettings } from '../../types/theme';
 
 export class ThemeService {
@@ -14,9 +15,14 @@ export class ThemeService {
     return ThemeService.instance;
   }
 
-  async getThemeSettings(userId: string): Promise<ThemeSettings | null> {
+  async getThemeSettings(): Promise<ThemeSettings | null> {
     try {
-      const docRef = doc(db, 'themeSettings', userId);
+      const { currentUser } = getAuth();
+      if (!currentUser) {
+        throw new Error('User must be authenticated to get theme settings');
+      }
+
+      const docRef = doc(db, 'themeSettings', currentUser.uid);
       const docSnap = await getDoc(docRef);
       
       if (docSnap.exists()) {
@@ -30,7 +36,7 @@ export class ThemeService {
         updatedAt: new Date()
       };
       
-      await this.updateThemeSettings(userId, defaultSettings);
+      await this.updateThemeSettings(defaultSettings);
       return defaultSettings;
     } catch (error) {
       console.error('Error getting theme settings:', error);
@@ -38,11 +44,17 @@ export class ThemeService {
     }
   }
 
-  async updateThemeSettings(userId: string, settings: ThemeSettings): Promise<void> {
+  async updateThemeSettings(settings: ThemeSettings): Promise<void> {
     try {
-      const docRef = doc(db, 'themeSettings', userId);
+      const { currentUser } = getAuth();
+      if (!currentUser) {
+        throw new Error('User must be authenticated to update theme settings');
+      }
+
+      const docRef = doc(db, 'themeSettings', currentUser.uid);
       await setDoc(docRef, {
         ...settings,
+        userId: currentUser.uid,
         updatedAt: new Date()
       });
     } catch (error) {
